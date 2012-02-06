@@ -65,7 +65,7 @@ object Scoobi {
   }
 
   /** The id for the current Scoobi job being (or about to be) executed. */
-  val jobId: String = timestamp
+  val jobId: String = "scb" + timestamp
 
 
   /** Scoobi's configuration. */

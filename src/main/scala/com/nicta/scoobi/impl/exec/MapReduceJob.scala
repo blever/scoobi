@@ -56,8 +56,8 @@ import com.nicta.scoobi.impl.util.JarBuilder
 
 
 /** A class that defines a single Hadoop MapReduce job. */
-class MapReduceJob {
-  lazy val logger = LogFactory.getLog(this.getClass.getName)
+class MapReduceJob(stepId: Int) {
+  lazy val logger = LogFactory.getLog("scoobi.Step")
 
   import scala.collection.mutable.{Set => MSet, Map => MMap}
 
@@ -97,7 +97,7 @@ class MapReduceJob {
   /** Take this MapReduce job and run it on Hadoop. */
   def run() = {
 
-    val job = new Job(Scoobi.conf, Scoobi.jobId)
+    val job = new Job(Scoobi.conf, Scoobi.jobId + "_" + stepId)
     val fs = FileSystem.get(job.getConfiguration)
 
     /* Job output always goes to temporary dir from which files are subsequently moved from
@@ -209,7 +209,7 @@ class MapReduceJob {
 
     /* Run job then tidy-up. */
     jar.close()
-    job.waitForCompletion(true)
+    job.waitForCompletion(false)
     tmpFile.delete
 
 
@@ -248,8 +248,8 @@ class MapReduceJob {
 object MapReduceJob {
 
   /** Construct a MapReduce job from an MSCR. */
-  def apply(mscr: MSCR): MapReduceJob = {
-    val job = new MapReduceJob
+  def apply(stepId: Int, mscr: MSCR): MapReduceJob = {
+    val job = new MapReduceJob(stepId)
     val mapperTags: MMap[AST.Node[_], Set[Int]] = MMap.empty
 
     /* Tag each output channel with a unique index. */
