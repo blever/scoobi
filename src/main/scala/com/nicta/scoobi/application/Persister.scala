@@ -26,6 +26,8 @@ import impl.exec._
 import Smart._
 import org.apache.hadoop.io.compress.{GzipCodec, CompressionCodec}
 import org.apache.hadoop.io.SequenceFile.CompressionType
+import scalaz.{Scalaz}
+import Scalaz._
 
 /** Type class for things that can be persisted. Mechanism to allow tuples of DLists and
   * DObjects to be persisted. */
@@ -36,12 +38,22 @@ trait Persister[In] {
 }
 
 /** Persister type class instances for tuples. */
-object Persister {
+object Persister extends LowImplicitsPersister {
   lazy val logger = LogFactory.getLog("scoobi.Persister")
 
   /** Evaluate and persist a distributed computation. This can be a combination of one or more
    * DLists (i.e. DListPersisters) and DObjects. */
   def persist[P](p: P)(implicit conf: ScoobiConfiguration, persister: Persister[P]): persister.Out = persister(p, conf)
+
+  implicit def sequencePersister[T](implicit pfn: PFn[T]): Persister[Seq[T]] = new Persister[Seq[T]] {
+
+    type Out = Seq[pfn.Ret]
+
+    def apply(seq: Seq[T], conf: ScoobiConfiguration): Seq[pfn.Ret] = {
+      val (st, nodeMap) = createPlan(seq.map(pfn.plan).toList, conf)
+      seq.toStream.traverseS(x => pfn.execute(x)).eval((st, nodeMap)).toSeq
+    }
+  }
 
   implicit def tuple1persister[T1](implicit pfn1: PFn[T1]) = new Persister[T1] {
 
@@ -289,6 +301,63 @@ object Persister {
   }
 }
 
+/**
+ * Those additional implicits allow to pass tuples of persisters to persist at once with the persist method
+ * @see PersisterSpec
+ */
+trait LowImplicitsPersister {
+
+  implicit def tuple2persisters[T1, T2]  (implicit p1: Persister[T1], p2: Persister[T2]) =
+    new Persister[(T1, T2)] {
+      type Out = (p1.Out, p2.Out)
+      def apply(x: (T1, T2), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf))
+    }
+
+  implicit def tuple3persisters[T1, T2, T3]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3]) =
+    new Persister[(T1, T2, T3)] {
+      type Out = (p1.Out, p2.Out, p3.Out)
+      def apply(x: (T1, T2, T3), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf))
+    }
+
+  implicit def tuple4persisters[T1, T2, T3, T4]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3], p4: Persister[T4]) =
+    new Persister[(T1, T2, T3, T4)] {
+      type Out = (p1.Out, p2.Out, p3.Out, p4.Out)
+      def apply(x: (T1, T2, T3, T4), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf), p4.apply(x._4, conf))
+    }
+
+  implicit def tuple5persisters[T1, T2, T3, T4, T5]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3], p4: Persister[T4], p5: Persister[T5]) =
+    new Persister[(T1, T2, T3, T4, T5)] {
+      type Out = (p1.Out, p2.Out, p3.Out, p4.Out, p5.Out)
+      def apply(x: (T1, T2, T3, T4, T5), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf), p4.apply(x._4, conf), p5.apply(x._5, conf))
+    }
+
+  implicit def tuple6persisters[T1, T2, T3, T4, T5, T6]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3], p4: Persister[T4], p5: Persister[T5], p6: Persister[T6]) =
+    new Persister[(T1, T2, T3, T4, T5, T6)] {
+      type Out = (p1.Out, p2.Out, p3.Out, p4.Out, p5.Out, p6.Out)
+      def apply(x: (T1, T2, T3, T4, T5, T6), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf), p4.apply(x._4, conf), p5.apply(x._5, conf), p6.apply(x._6, conf))
+    }
+
+  implicit def tuple7persisters[T1, T2, T3, T4, T5, T6, T7]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3], p4: Persister[T4], p5: Persister[T5], p6: Persister[T6], p7: Persister[T7]) =
+    new Persister[(T1, T2, T3, T4, T5, T6, T7)] {
+      type Out = (p1.Out, p2.Out, p3.Out, p4.Out, p5.Out, p6.Out, p7.Out)
+      def apply(x: (T1, T2, T3, T4, T5, T6, T7), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf), p4.apply(x._4, conf), p5.apply(x._5, conf), p6.apply(x._6, conf), p7.apply(x._7, conf))
+    }
+
+  implicit def tuple8persisters[T1, T2, T3, T4, T5, T6, T7, T8]  (implicit p1: Persister[T1], p2: Persister[T2], p3: Persister[T3], p4: Persister[T4], p5: Persister[T5], p6: Persister[T6], p7: Persister[T7], p8: Persister[T8]) =
+    new Persister[(T1, T2, T3, T4, T5, T6, T7, T8)] {
+      type Out = (p1.Out, p2.Out, p3.Out, p4.Out, p5.Out, p6.Out, p7.Out, p8.Out)
+      def apply(x: (T1, T2, T3, T4, T5, T6, T7, T8), conf: ScoobiConfiguration) =
+        (p1.apply(x._1, conf), p2.apply(x._2, conf), p3.apply(x._3, conf), p4.apply(x._4, conf), p5.apply(x._5, conf), p6.apply(x._6, conf), p7.apply(x._7, conf), p8.apply(x._8, conf))
+    }
+
+
+}
 
 /** The container for persisting a DList. */
 case class DListPersister[A](dlist: DList[A], sink: DataSink[_, _, A]) {
