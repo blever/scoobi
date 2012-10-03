@@ -88,24 +88,61 @@ case class BridgeStore[A]()
 
   /* Read the contents of this bridge store sequence files as an Iterable collection. */
   def readAsIterable(implicit sc: ScoobiConfiguration): Iterable[A] = new Iterable[A] {
-    def iterator = {
-      val fs = FileSystem.get(path.toUri, sc)
-      val readers = fs.globStatus(new Path(path, "ch*")) map { (stat: FileStatus) =>
-        new SequenceFile.Reader(sc, SequenceFile.Reader.file(stat.getPath))
+//  def iterator = {
+//    val fs = FileSystem.get(path.toUri, sc)
+//    val readers = fs.globStatus(new Path(path, "ch*")) map { (stat: FileStatus) =>
+//      new SequenceFile.Reader(sc, SequenceFile.Reader.file(stat.getPath))
+//    }
+
+//    def iterators = readers.toIterable map { reader =>
+//      new Iterator[A] {
+//        val key = NullWritable.get
+//        val value: ScoobiWritable[A] =
+//          Class.forName(reader.getValueClassName).newInstance.asInstanceOf[ScoobiWritable[A]]
+//        def next(): A = { println("calling next"); value.get }
+//        def hasNext: Boolean = reader.next(key, value)
+
+//      } //toIterable
+//    }
+
+//    iterators.flatten.toIterator
+
+
+    val fs = FileSystem.get(path.toUri, sc)
+    val readers = fs.globStatus(new Path(path, "ch*")) map { (stat: FileStatus) =>
+      new SequenceFile.Reader(sc, SequenceFile.Reader.file(stat.getPath))
+    }
+
+    val iterator = new Iterator[A] {
+
+      val key = NullWritable.get
+
+      val value: ScoobiWritable[A] = // TODO - handle case when readers is empty
+        Class.forName(readers.head.getValueClassName).newInstance.asInstanceOf[ScoobiWritable[A]]
+
+      var remainingReaders = readers.toList
+
+      //println("@@@creating new iterator, readers=" + remainingReaders)
+
+
+      def next(): A = { /*println("%%%next (reader=" + remainingReaders + ")");*/ value.get }
+      def hasNext(): Boolean = {
+        //println("###hasNext")
+        if (remainingReaders == Nil) {
+          //println("no more readers - returning false")
+          false
+        } else {
+          //println("remainingReaders=" + remainingReaders)
+          if (remainingReaders.head.next(key, value)) {
+            //println("returning true - value=" + value.get)
+            true
+          } else {
+            //println("-> trying next reader")
+            remainingReaders = remainingReaders.tail
+            hasNext()
+          }
+        }
       }
-
-      val iterators = readers.toIterable map { reader =>
-        new Iterator[A] {
-          val key = NullWritable.get
-          val value: ScoobiWritable[A] =
-            Class.forName(reader.getValueClassName).newInstance.asInstanceOf[ScoobiWritable[A]]
-          def next(): A = value.get
-          def hasNext: Boolean = reader.next(key, value)
-
-        } toIterable
-      }
-
-      iterators.flatten.toIterator
     }
   }
 
