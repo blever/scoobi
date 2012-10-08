@@ -202,6 +202,28 @@ trait DList[A] {
   // Derived functionality (reduction operations)
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+  /** Aggregate the results of applying an operator to subsequent elements of a DList. It
+    * traverses the elements in different partitions sequentially, using seqop to update
+    * the result, and then applies combop to results from different partitions. The
+    * implementation of this operation may operate on an arbitrary number of collection partitions,
+    * so combop may be invoked arbitrary number of times.*/
+  def aggregate[B : Manifest : WireFormat](z: DObject[B])(seqop: (B, A) => B, combop: (B, B) => B): DObject[B] = {
+
+    val imc: DList[B] = parallelDo(z, new EnvDoFn[A, B, B] {
+      var acc: B = _
+      def setup(z: B) { acc = z }
+      def process(z: B, input: A, emitter: Emitter[B]) = { acc = seqop(acc, input) }
+      def cleanup(z: B, emitter: Emitter[B]) { emitter.emit(acc) }
+    })
+
+    val x: DObject[Iterable[B]] = imc.groupBy(_ => 0).combine(combop).map(_._2).materialize
+    x map {
+      case it if it.isEmpty => sys.error("the aggregate operation is called on an empty list")
+      case it               => it.head
+    }
+  }
+
+
   /**Reduce the elements of this distributed list using the specified associative binary operator. The
    * order in which the elements are reduced is unspecified and may be non-deterministic. */
   def reduce(op: (A, A) => A): DObject[A] = {
@@ -262,6 +284,31 @@ trait DList[A] {
   /**Find the smallest element in the distributed list. */
   def minBy[B](f: A => B)(cmp: Ordering[B]): DObject[A] =
     reduce((x, y) => if (cmp.lteq(f(x), f(y))) x else y)
+
+
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  // Other - move somewhere else
+  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  /* Randomly suffle a DList. */
+  def shuffle: DList[A] = groupBy(_ => scala.util.Random.nextDouble()).flatMap(kvs => kvs._2)
+
+  /* Divide a DList into multiple partitions. (Would be cool to encode that we don't
+   * want a stratum outside 'n' to be specified.) */
+  def stratify(n: Int)(f: A => Int): Seq[DList[A]] =
+    (0 until n).toSeq map { i => this.filter(x => f(x) == i) }
+
+  /* Randomly divide a DList into multiple partions where the stratum proportions are defined by 'weights'. */
+  def stratifyWeighted[N : Numeric](weights: Seq[N]): Seq[DList[A]] = {
+    import scala.math.Numeric.Implicits._
+    val total = weights.sum.toDouble
+
+    val accWeights: Seq[(Double, Int)] = weights.map(_.toDouble).scan(0.0)(_+_).tail.map(_ / total).zipWithIndex
+    def inStratum(k: Double, i: Int) = accWeights.find(k < _._1).get._2 == i
+
+    val randomlyKeyed = map { v => (scala.util.Random.nextDouble(), v) }
+    (0 until weights.size).toSeq map { i => randomlyKeyed.filter(x => inStratum(x._1, i)).map(_._2) }
+  }
 }
 
 
