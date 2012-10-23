@@ -70,4 +70,13 @@ class DListImpl[A : Manifest : WireFormat] private[scoobi] (comp: Smart.DComp[A,
     }
     new DListImpl(Smart.ParallelDo(comp, UnitDObject.getComp, dofn, groupBarrier = true))
   }
+
+  def force: DList[A] = {
+    val dofn = new DoFn[A, A] {
+      def setup() {}
+      def process(input: A, emitter: Emitter[A]) { emitter.emit(input) }
+      def cleanup(emitter: Emitter[A]) {}
+    }
+    new DListImpl(Smart.ParallelDo(comp, UnitDObject.getComp, dofn, fuseBarrier = true))
+  }
 }

@@ -84,6 +84,9 @@ trait DList[A] {
    * the same Map-Reduce job. */
   def groupBarrier: DList[A]
 
+  def force: DList[A]
+
+
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Derived functionality (return DLists).
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
