@@ -73,8 +73,7 @@ class DListSpec extends NictaSimpleJobs {
 
     DList.concat(aa, bb).run.sorted must_== (1 to 10).toSeq
   }
-  
-  
+
   "DLists can be concatenated via reduce" >> {
     val lists = Seq.fill(5)(DList(1 -> 2))
 
@@ -86,5 +85,12 @@ class DListSpec extends NictaSimpleJobs {
     }
   }
 
+  "Can zip a DList with its indicies" >> { implicit sc: SC =>
+    val seq = 0 until 10000
 
+    val ys = seq.toDList.zipWithIndex.run
+
+    ys.map(_._1).sorted.toSeq === seq
+    ys.map(_._2).sorted.toSeq === seq
+  }
 }

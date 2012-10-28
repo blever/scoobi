@@ -201,6 +201,61 @@ trait DList[A] {
   : DList[V] = map(ev(_)._2)
 
 
+  /**Zips this distributed list with its indices. */
+  def zipWithIndex: DList[(A, Int)] = {
+
+    type RecOrCnt[A] = Either[A, Int]
+    val BinSize = 1000
+
+    /* Bin each record with a random key (a proxy for a mapper task id) and also emit
+     * a count of the number of records in each bin. */
+    val tagged: DList[(Int, RecOrCnt[A])] = parallelDo(new DoFn[A, (Int, RecOrCnt[A])] {
+      var rand = 0
+      var cnt = 0
+
+      def setup() {}
+
+      def process(input: A, emitter: Emitter[(Int, RecOrCnt[A])]) {
+        if (cnt == 0) rand = scala.util.Random.nextInt()
+        emitter.emit((rand, Left(input)))
+        cnt += 1
+        if (cnt == BinSize) { emitter.emit((rand, Right(cnt))); cnt = 0 }
+      }
+
+      def cleanup(emitter: Emitter[(Int, RecOrCnt[A])]) {
+        if (cnt != BinSize) emitter.emit((rand, Right(cnt)))
+      }
+    })
+
+    /* The binned records. */
+    val binned: DList[(Int, A)] = tagged.groupByKey flatMap { case (ix, vs) =>
+      vs collect { case Left(v) => (ix, v) }
+    }
+
+    /* The record count of each bin. */
+    val counts: DList[(Int, Int)] = tagged.groupByKey map { case (ix, vs) =>
+      (ix, vs.collect{ case Right(cnt) => cnt }.sum)
+    }
+
+    /* Assign offsets for each bin. */
+    val offsets: DObject[Map[Int, Int]] = counts.materialize map { case cnts =>
+      val (ixs, cs) = cnts.unzip
+      (ixs zip cs.scanLeft(0)(_+_).init).toMap
+    }
+
+    /* For each bin, output its records with an incrementing index, offset by the pre-calculated
+     * 'offset' for the bin. */
+    (offsets join binned.groupByKey).parallelDo(new BasicDoFn[(Map[Int, Int], (Int, Iterable[A])), (A, Int)] {
+      def process(input: (Map[Int, Int], (Int, Iterable[A])), emitter: Emitter[(A, Int)]) {
+        var i = 0
+        val (offs, (ix, vs)) = input
+        val offset = offs(ix)
+        vs foreach { v => emitter.emit((v, offset + i)); i += 1 }
+      }
+    })
+  }
+
+
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Derived functionality (reduction operations)
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
